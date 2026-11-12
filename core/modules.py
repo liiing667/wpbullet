@@ -1,6 +1,7 @@
 import re
 import copy
 from core import scanner
+from core import taint
 
 class BaseClass(object):
 
@@ -21,18 +22,11 @@ class BaseClass(object):
     blacklist = []
 
     # User-controlled variables
-    user_input = [
-        "\\$_GET",
-        "\\$_POST",
-        "\\$_REQUEST",
-        "\\$_FILES",
-        "\\$_COOKIE",
-        "\\$_SERVER(\\s?)\\[(\\s?)+('|\\\"|`)(REQUEST_URI|PHP_SELF|HTTP_REFERER)(\\s?)+('|\\\"|`)(\\s?)+]",
-        "\\$_SESSION"
-    ]
+    user_input = taint.USER_INPUT
 
     # Finds vulnerabilities in given file content
     def run(self, content, file):
+        content = taint.sanitize_content(content)
         pattern = self.build_pattern(self, content=content, file=file)
         matches = re.findall(pattern=pattern, string=content)
         return matches
@@ -40,9 +34,13 @@ class BaseClass(object):
     # Prints all found vulnerabilities
     def execute(self, content, file):
         matches = self.run(self, content, file)
+        sanitized = taint.sanitize_content(content)
+        original_lines = content.split('\n')
         for match in matches:
             if match[0]:
-                scanner.CODE_VULNERABILITIES.append([self.severity, self.name, file + ":" + str(self.get_match_line(content, match[0])), match[0] ])
+                line_no = self.get_match_line(sanitized, match[0])
+                info = original_lines[line_no - 1].strip() if line_no else match[0]
+                scanner.CODE_VULNERABILITIES.append([self.severity, self.name, file + ":" + str(line_no), info])
 
     # Build dynamic regex pattern to locate vulnerabilities in given content
     def build_pattern(self, content, file):
@@ -75,12 +73,6 @@ class BaseClass(object):
         return False
 
     # Get variables which's content is possible to manipulate with user input
+    # Lightweight scope-aware taint propagation over sanitized content
     def get_input_variables(self, content):
-        pattern = re.compile("((\$[a-zA-Z0-9-_.$]+)(\s?)+=(\s?)+)(" + '|'.join(self.user_input) +")", flags=re.IGNORECASE)
-        matches = re.findall(pattern=pattern, string=content)
-
-        variables = []
-        for match in matches:
-            variables.append(re.escape(match[1]))
-
-        return list(dict.fromkeys(variables))
+        return taint.get_tainted_variables(content, sources=self.user_input)

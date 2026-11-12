@@ -103,4 +103,19 @@ def build_pattern(self, content, file):
 ```
 
 ### Testing
-Running unit tests: `$ python3 -m unittest`
+Running unit tests: `$ python -m unittest discover -s test -p 'test_*.py'`
+
+### Taint analysis
+Before any module runs, `core/taint.py` preprocesses the file:
+
+* Comments and string literal contents are blanked out (line numbers are
+  preserved), so sinks mentioned in comments or strings are not reported.
+  Variables interpolated in strings are kept.
+* A lightweight scope-aware assignment tracker propagates taint from user
+  input (`$_GET`, `$_POST`, ...) through variables, array elements, object
+  properties and string concatenation. Tainted variables are handed to the
+  modules as additional `user_input` patterns, so module regexes and the
+  `file:line` reporting format are unchanged.
+* Constructs the engine cannot analyze (`extract()`, `$$` variable
+  variables, `parse_str()`, heredoc/nowdoc) fall back to conservative
+  over-approximation so potential vulnerabilities are still reported.
